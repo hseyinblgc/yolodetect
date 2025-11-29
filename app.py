@@ -11,7 +11,7 @@ from ultralytics import YOLO
 # ----------------------
 # CONFIG
 # ----------------------
-MODEL_PATH = "best1.pt"
+MODEL_PATH = "best.pt"
 VIDEO_SOURCE = "video.mp4" # 0 = webcam
 CONF_TH = 0.60
 
