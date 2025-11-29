@@ -11,9 +11,9 @@ from ultralytics import YOLO
 # ----------------------
 # CONFIG
 # ----------------------
-MODEL_PATH = "best.pt"
+MODEL_PATH = "best1.pt"
 VIDEO_SOURCE = "video.mp4" # 0 = webcam
-CONF_TH = 0.85
+CONF_TH = 0.60
 
 # Otomatik cihaz seçimi (GPU varsa GPU, yoksa CPU)
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -74,7 +74,7 @@ class VideoWorker(QThread):
             h, w = frame.shape[:2]
 
             # YOLO inference
-            results = self.model(frame, conf=CONF_TH, verbose=False)
+            results = self.model(frame, conf=CONF_TH, iou=0.3,imgsz=1024, verbose=False)
             masks = None
             if results and results[0].masks is not None:
                 masks = results[0].masks.data.cpu().numpy()  # (N,H,W)
