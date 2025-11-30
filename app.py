@@ -31,6 +31,7 @@ class VideoWorker(QThread):
         self.cap = cv2.VideoCapture(VIDEO_SOURCE)
         self.running = True
         self.total_count = 0
+        self.counted_ids = set()  # Sayılan ID'leri hafızada tutmak için küme
 
     def resize_mask(self, mask, w, h):
         # Mask'i frame boyutuna getir
@@ -50,22 +51,6 @@ class VideoWorker(QThread):
             overlay = cv2.addWeighted(overlay, 1.0, color_mask, 0.5, 0)
         return overlay
 
-    def check_crossing(self, masks, w):
-        """Dikey çizgiyi geçen ürünleri say"""
-        if masks is None or len(masks) == 0:
-            return
-        line_x = w // 2
-        for mask in masks:
-            h, mw = mask.shape
-            mask_resized = cv2.resize(mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
-            ys, xs = np.where(mask_resized == 1)
-            if len(xs) == 0:
-                continue
-            obj_right = xs.max()
-            if obj_right > line_x:
-                self.total_count += 1
-                return
-
     def run(self):
         while self.running:
             ret, frame = self.cap.read()
@@ -73,31 +58,40 @@ class VideoWorker(QThread):
                 continue
             h, w = frame.shape[:2]
 
-            # YOLO inference
-            results = self.model(frame, conf=CONF_TH, iou=0.3,imgsz=1024, verbose=False)
-            masks = None
+            # YOLO Tracking (persist=True nesne takibini sağlar)
+            results = self.model.track(frame, conf=CONF_TH, iou=0.3, imgsz=1024, persist=True, verbose=False)
             
-            # Sadece sağ taraftakileri filtrele
-            if results and results[0].masks is not None and results[0].boxes is not None:
+            masks_to_draw = None
+            
+            # Sonuçları işle
+            if results and results[0].boxes is not None and results[0].masks is not None and results[0].boxes.id is not None:
                 all_masks = results[0].masks.data.cpu().numpy()
                 all_boxes = results[0].boxes.xyxy.cpu().numpy()
+                all_ids = results[0].boxes.id.int().cpu().tolist()
                 
-                filtered_list = []
-                for m, box in zip(all_masks, all_boxes):
+                filtered_masks = []
+                
+                for mask, box, track_id in zip(all_masks, all_boxes, all_ids):
                     x1, y1, x2, y2 = box
                     cx = (x1 + x2) / 2
-                    # Çizginin sağı (w // 2)
+                    
+                    # Sadece çizginin sağındakiler (w // 2)
                     if cx > (w // 2):
-                        filtered_list.append(m)
+                        filtered_masks.append(mask)
+                        
+                        # Eğer bu ID daha önce sayılmadıysa say ve kaydet
+                        if track_id not in self.counted_ids:
+                            self.counted_ids.add(track_id)
+                            self.total_count += 1
                 
-                if len(filtered_list) > 0:
-                    masks = np.array(filtered_list)
+                if len(filtered_masks) > 0:
+                    masks_to_draw = np.array(filtered_masks)
 
             # Maskleri uygula
             vis = frame.copy()
-            if masks is not None:
-                vis = self.apply_masks(vis, masks)
-                self.check_crossing(masks, w)
+            if masks_to_draw is not None:
+                vis = self.apply_masks(vis, masks_to_draw)
+                # self.check_crossing(masks, w) -> Artık buna gerek yok
 
             # Dikey kırmızı çizgi
             cv2.line(vis, (w//2, 0), (w//2, h), (0,0,255), 1)
