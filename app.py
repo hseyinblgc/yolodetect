@@ -76,8 +76,22 @@ class VideoWorker(QThread):
             # YOLO inference
             results = self.model(frame, conf=CONF_TH, iou=0.3,imgsz=1024, verbose=False)
             masks = None
-            if results and results[0].masks is not None:
-                masks = results[0].masks.data.cpu().numpy()  # (N,H,W)
+            
+            # Sadece sağ taraftakileri filtrele
+            if results and results[0].masks is not None and results[0].boxes is not None:
+                all_masks = results[0].masks.data.cpu().numpy()
+                all_boxes = results[0].boxes.xyxy.cpu().numpy()
+                
+                filtered_list = []
+                for m, box in zip(all_masks, all_boxes):
+                    x1, y1, x2, y2 = box
+                    cx = (x1 + x2) / 2
+                    # Çizginin sağı (w // 2)
+                    if cx > (w // 2):
+                        filtered_list.append(m)
+                
+                if len(filtered_list) > 0:
+                    masks = np.array(filtered_list)
 
             # Maskleri uygula
             vis = frame.copy()
