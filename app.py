@@ -12,8 +12,8 @@ from deep_sort_realtime.deepsort_tracker import DeepSort
 # ----------------------
 # CONFIG
 # ----------------------
-MODEL_PATH = "best1.pt"
-VIDEO_SOURCE = "video.mp4"
+MODEL_PATH = "best.pt"
+VIDEO_SOURCE = "video.mp4" # 0 = webcam
 CONF_TH = 0.60
 
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
