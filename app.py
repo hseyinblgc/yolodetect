@@ -8,6 +8,10 @@ from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QPixmap, QImage
 from ultralytics import YOLO
 from deep_sort_realtime.deepsort_tracker import DeepSort
+import serial
+import serial.tools.list_ports
+import time
+
 
 # ----------------------
 # CONFIG
@@ -32,6 +36,15 @@ def log_detection(track_id):
     with open("detections.log", "a", encoding="utf-8") as f:
         f.write(line)
     return product_global_id
+
+def find_arduino():
+    ports = serial.tools.list_ports.comports()
+    for p in ports:
+        text = p.description.lower()
+        if ("arduino" in text) or ("ch340" in text) or ("usb serial" in text):
+            return p.device
+    return None
+
 
 
 # ----------------------
@@ -62,6 +75,9 @@ class VideoWorker(QThread):
 
         self.counted_ids = set()
 
+        self.arduino = ArduinoSerial()
+        self.last_sent_count = -1
+
     def resize_mask(self, mask, w, h):
         return cv2.resize(mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
 
@@ -89,11 +105,13 @@ class VideoWorker(QThread):
         if track_id in self.counted_ids:
             return
 
-        # Nesne çizginin sağ tarafına geçtiyse say
         if cx >= line_x:
             self.total_count += 1
             self.counted_ids.add(track_id)
             log_detection(track_id)
+
+            # Arduino'ya gönder
+            self.arduino.send(self.total_count)
 
     # ----------------------
 
@@ -200,6 +218,49 @@ class MainWindow(QMainWindow):
         self.worker.wait()
         event.accept()
 
+
+
+class ArduinoSerial:
+    def __init__(self, baudrate=9600):
+        self.baudrate = baudrate
+        self.ser = None
+        self.connect()
+
+    def find_arduino(self):
+        ports = serial.tools.list_ports.comports()
+        for p in ports:
+            name = p.description.lower()
+            if ("arduino" in name) or ("ch340" in name) or ("usb" in name):
+                return p.device
+        return None
+
+    def connect(self):
+        port = self.find_arduino()
+        if port is None:
+            print("Arduino bulunamadı, tekrar denenecek…")
+            return False
+
+        try:
+            self.ser = serial.Serial(port, self.baudrate, timeout=1)
+            time.sleep(2)  # Arduino reset olur, bekleme şart
+            print(f"Arduino bağlandı: {port}")
+            return True
+        except Exception as e:
+            print("Arduino bağlantı hatası:", e)
+            self.ser = None
+            return False
+
+    def send(self, text):
+        if self.ser is None:
+            self.connect()
+
+        if self.ser:
+            try:
+                self.ser.write(f"{text}\n".encode())
+            except Exception:
+                print("Arduino bağlantısı koptu. Yeniden bağlanıyor…")
+                self.ser = None
+                self.connect()
 
 # ----------------------
 # RUN
